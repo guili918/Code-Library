@@ -1,390 +1,542 @@
-// Minesweeper — 快速标题显示（使用 pushImage，一次性显示整图）
-// 依赖：M5Unified + title image header "title_img_alpha_white.h"
-// header 必须包含： const uint16_t TITLE_IMG[]; #define TITLE_IMG_WIDTH 540; #define TITLE_IMG_HEIGHT 150
+// Minesweeper - Image-driven (Adjusted: robust BG, button-number spacing, guanji toggle)
+// Assumes: M5Unified library and image headers in sketch folder.
+// Headers expected: bg.h, map1.h, map2.h, lei1.h, lei2.h, qi.h, button1.h, button2.h, jifen.h, shu.h, ying.h, guanji.h
+// Each header should provide: <NAME>_IMG (uint16_t array) and <NAME>_IMG_WIDTH / <NAME>_IMG_HEIGHT macros.
 
 #include <M5Unified.h>
-#include "title_img_alpha_white.h"
 
-// configuration
-const int CELL = 60;
-const int MAX_COLS = 9;
-const int MAX_ROWS = 12;
-const unsigned long LONGPRESS_MS = 600; // ms
+// conditional includes (unchanged)
+#if __has_include("bg.h")
+  #include "bg.h"
+  #define HAS_BG 1
+#else
+  #define HAS_BG 0
+#endif
 
-// screen / grid
-int SCREEN_W = 960;
-int SCREEN_H = 540;
-int colsActive = MAX_COLS;
-int rowsActive = 9;
+#if __has_include("map1.h")
+  #include "map1.h"
+  #define HAS_MAP1 1
+#else
+  #define HAS_MAP1 0
+#endif
+
+#if __has_include("map2.h")
+  #include "map2.h"
+  #define HAS_MAP2 1
+#else
+  #define HAS_MAP2 0
+#endif
+
+#if __has_include("lei1.h")
+  #include "lei1.h"
+  #define HAS_LEI1 1
+#else
+  #define HAS_LEI1 0
+#endif
+
+#if __has_include("lei2.h")
+  #include "lei2.h"
+  #define HAS_LEI2 1
+#else
+  #define HAS_LEI2 0
+#endif
+
+#if __has_include("qi.h")
+  #include "qi.h"
+  #define HAS_QI 1
+#else
+  #define HAS_QI 0
+#endif
+
+#if __has_include("button1.h")
+  #include "button1.h"
+  #define HAS_BUTTON1 1
+#else
+  #define HAS_BUTTON1 0
+#endif
+
+#if __has_include("button2.h")
+  #include "button2.h"
+  #define HAS_BUTTON2 1
+#else
+  #define HAS_BUTTON2 0
+#endif
+
+#if __has_include("jifen.h")
+  #include "jifen.h"
+  #define HAS_JIFEN 1
+#else
+  #define HAS_JIFEN 0
+#endif
+
+#if __has_include("shu.h")
+  #include "shu.h"
+  #define HAS_SHU 1
+#else
+  #define HAS_SHU 0
+#endif
+
+#if __has_include("ying.h")
+  #include "ying.h"
+  #define HAS_YING 1
+#else
+  #define HAS_YING 0
+#endif
+
+#if __has_include("guanji.h")
+  #include "guanji.h"
+  #define HAS_GUANJI 1
+#else
+  #define HAS_GUANJI 0
+#endif
+
+// --- layout constants (as before) ---
+const int COLS = 9;
+const int ROWS = 12;
+const int CELL = 54;
+const int GAP  = 3;
+const int GRID_LEFT = 15;
+const int GRID_TOP  = 150;
+const int LEI_W = 27;
+const int LEI_H = 27;
+const int QI_W  = 27;
+const int QI_H  = 27;
+const int LEI_OFFSET_X = 12;
+const int LEI_OFFSET_Y = 12;
+const int BUTTON_W = 120;
+const int BUTTON_H = 57;
+const int BUTTON_GAP = 24;
+const int BUTTON_LEFT_MARGIN = 9;
+const int BUTTON_RIGHT_MARGIN = 9;
+const int BUTTON_ROW_TOP_OFFSET = 33;
+const unsigned long LONGPRESS_MS = 600;
+
+// derived
+int SCREEN_W = 0, SCREEN_H = 0;
+int GRID_X = GRID_LEFT;
+int GRID_Y = GRID_TOP;
 int GRID_W = 0;
 int GRID_H = 0;
-int GRID_X = 0;
-int GRID_Y = 0; // will be set based on title height
+int BUTTON_ROW_Y = 0;
+int btn1_x=0, btn2_x=0, btn_restart_x=0;
 
-int minesCount = 10;
-int flagsLeft = 0;
-
-// board arrays
-uint8_t minesArr[MAX_ROWS][MAX_COLS];
-uint8_t numsArr[MAX_ROWS][MAX_COLS];
-uint8_t stateArr[MAX_ROWS][MAX_COLS]; // 0 hidden,1 revealed,2 flagged
-
+// game state
+uint8_t minesArr[ROWS][COLS];
+uint8_t numsArr[ROWS][COLS];
+uint8_t stateArr[ROWS][COLS]; // 0 hidden,1 revealed,2 flagged
 bool gameOver = false;
+int totalMines = 0;
+int flagsLeft = 0;
+long scorePoints = 0;
 
-// touch tracking
+// touch
 bool touching = false;
 unsigned long touchStartMs = 0;
-int lastRawX = 0, lastRawY = 0;
+int lastTouchX = 0, lastTouchY = 0;
 bool longHandled = false;
 
-// UI rects
-struct Rect { int x, y, w, h; };
-Rect restartBtnRect;
-Rect minesBoxRect;
+// guanji (lock wallpaper) state
+bool showingGuanji = false;
 
-// prototypes
-void drawTitleOnce();
-void drawUI();
-void drawGridFull();
-void drawCell(int r, int c);
-void resetBoard();
-void revealFlood(int r, int c);
-void revealAllMines();
-bool checkWin();
-bool pixelToCell(int sx, int sy, int &outR, int &outC);
+// helper: pushImage with different header symbol names
+void pushBgIfPresent() {
+  // prefer BG_IMG_* macro style
+  #if defined(BG_IMG_WIDTH) && defined(BG_IMG_HEIGHT)
+    M5.Display.pushImage(0, 0, BG_IMG_WIDTH, BG_IMG_HEIGHT, (const uint16_t*)BG_IMG);
+  #elif defined(BG_WIDTH) && defined(BG_HEIGHT)
+    M5.Display.pushImage(0, 0, BG_WIDTH, BG_HEIGHT, (const uint16_t*)BG);
+  #else
+    // fallback fill
+    M5.Display.fillScreen(TFT_WHITE);
+  #endif
+  // always commit immediately for background
+  M5.Display.display();
+}
 
-// --- setup / loop ---
+// draw background (robust)
+void drawBackground() {
+  pushBgIfPresent();
+}
+
+// draw a single cell (unchanged except flagged uses map1)
+void drawCell(int r, int c) {
+  if (r<0||c<0||r>=ROWS||c>=COLS) return;
+  int stride = CELL + GAP;
+  int x = GRID_X + c * stride;
+  int y = GRID_Y + r * stride;
+
+  // background: flagged or hidden -> map1; revealed -> map2
+  if (stateArr[r][c] == 1) {
+    // revealed
+    #if defined(MAP2_IMG_WIDTH) && defined(MAP2_IMG_HEIGHT)
+      M5.Display.pushImage(x,y, MAP2_IMG_WIDTH, MAP2_IMG_HEIGHT, (const uint16_t*)MAP2_IMG);
+    #else
+      M5.Display.fillRect(x,y,CELL,CELL,TFT_WHITE);
+      M5.Display.drawRect(x,y,CELL,CELL,TFT_BLACK);
+    #endif
+  } else {
+    // hidden or flagged
+    #if defined(MAP1_IMG_WIDTH) && defined(MAP1_IMG_HEIGHT)
+      M5.Display.pushImage(x,y, MAP1_IMG_WIDTH, MAP1_IMG_HEIGHT, (const uint16_t*)MAP1_IMG);
+    #else
+      M5.Display.fillRect(x,y,CELL,CELL,0xC618);
+      M5.Display.drawRect(x,y,CELL,CELL,TFT_BLACK);
+    #endif
+  }
+
+  // flagged -> draw qi
+  if (stateArr[r][c] == 2) {
+    #if defined(QI_IMG_WIDTH) && defined(QI_IMG_HEIGHT)
+      M5.Display.pushImage(x+LEI_OFFSET_X, y+LEI_OFFSET_Y, QI_IMG_WIDTH, QI_IMG_HEIGHT, (const uint16_t*)QI_IMG);
+    #else
+      M5.Display.fillRect(x+LEI_OFFSET_X,y+LEI_OFFSET_Y,QI_W,QI_H,TFT_RED);
+    #endif
+    return;
+  }
+
+  // revealed & mine -> use lei1
+  if (stateArr[r][c] == 1 && minesArr[r][c]) {
+    #if defined(LEI1_IMG_WIDTH) && defined(LEI1_IMG_HEIGHT)
+      M5.Display.pushImage(x+LEI_OFFSET_X, y+LEI_OFFSET_Y, LEI1_IMG_WIDTH, LEI1_IMG_HEIGHT, (const uint16_t*)LEI1_IMG);
+    #else
+      M5.Display.fillRect(x+LEI_OFFSET_X,y+LEI_OFFSET_Y,LEI_W,LEI_H,TFT_BLACK);
+    #endif
+    return;
+  }
+
+  // revealed & number
+  if (stateArr[r][c] == 1 && !minesArr[r][c]) {
+    uint8_t n = numsArr[r][c];
+    if (n>0) {
+      String s = String(n);
+      int tsize = 3;
+      M5.Display.setTextSize(tsize);
+      M5.Display.setTextColor(TFT_BLACK);
+      // approximate char width for tsize=3
+      int charW = 12;
+      int textW = charW * s.length();
+      int drawX = x + (CELL - textW)/2;
+      int drawY = y + (CELL - 16)/2;
+      if (drawX < x) drawX = x+2;
+      M5.Display.drawString(s, drawX, drawY);
+      M5.Display.setTextSize(1);
+    }
+  }
+}
+
+// draw full grid
+void drawGridFull() {
+  for (int r=0;r<ROWS;++r) for (int c=0;c<COLS;++c) drawCell(r,c);
+}
+
+// draw buttons and UI (with strict right-margin=15 for numbers)
+void drawButtonsAndUI() {
+  BUTTON_ROW_Y = GRID_Y + GRID_H + BUTTON_ROW_TOP_OFFSET;
+  btn1_x = BUTTON_LEFT_MARGIN;
+  int btn1_y = BUTTON_ROW_Y;
+  btn2_x = btn1_x + BUTTON_W + BUTTON_GAP;
+  int btn2_y = btn1_y;
+  btn_restart_x = SCREEN_W - BUTTON_RIGHT_MARGIN - BUTTON_W;
+  int btn_restart_y = btn1_y;
+
+  // button backgrounds
+  #if defined(BUTTON1_IMG_WIDTH) && defined(BUTTON1_IMG_HEIGHT)
+    M5.Display.pushImage(btn1_x, btn1_y, BUTTON1_IMG_WIDTH, BUTTON1_IMG_HEIGHT, (const uint16_t*)BUTTON1_IMG);
+    M5.Display.pushImage(btn2_x, btn2_y, BUTTON1_IMG_WIDTH, BUTTON1_IMG_HEIGHT, (const uint16_t*)BUTTON1_IMG);
+  #else
+    M5.Display.fillRect(btn1_x,btn1_y,BUTTON_W,BUTTON_H,0xFFDF);
+    M5.Display.drawRect(btn1_x,btn1_y,BUTTON_W,BUTTON_H,TFT_BLACK);
+    M5.Display.fillRect(btn2_x,btn2_y,BUTTON_W,BUTTON_H,0xFFDF);
+    M5.Display.drawRect(btn2_x,btn2_y,BUTTON_W,BUTTON_H,TFT_BLACK);
+  #endif
+
+  #if defined(BUTTON2_IMG_WIDTH) && defined(BUTTON2_IMG_HEIGHT)
+    M5.Display.pushImage(btn_restart_x, btn_restart_y, BUTTON2_IMG_WIDTH, BUTTON2_IMG_HEIGHT, (const uint16_t*)BUTTON2_IMG);
+  #else
+    M5.Display.fillRect(btn_restart_x,btn_restart_y,BUTTON_W,BUTTON_H,TFT_WHITE);
+    M5.Display.drawRect(btn_restart_x,btn_restart_y,BUTTON_W,BUTTON_H,TFT_BLACK);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(TFT_BLACK);
+    M5.Display.drawString("Restart", btn_restart_x + 18, btn_restart_y + 12);
+    M5.Display.setTextSize(1);
+  #endif
+
+  // icons
+  int icon_x = btn1_x + 15;
+  int icon_y = btn1_y + 12;
+  #if defined(JIFEN_IMG_WIDTH) && defined(JIFEN_IMG_HEIGHT)
+    M5.Display.pushImage(icon_x, icon_y, JIFEN_IMG_WIDTH, JIFEN_IMG_HEIGHT, (const uint16_t*)JIFEN_IMG);
+  #else
+    M5.Display.fillRect(icon_x,icon_y,27,27,TFT_YELLOW);
+  #endif
+
+  int mine_icon_x = btn2_x + 15;
+  int mine_icon_y = btn2_y + 12;
+  #if defined(LEI2_IMG_WIDTH) && defined(LEI2_IMG_HEIGHT)
+    M5.Display.pushImage(mine_icon_x, mine_icon_y, LEI2_IMG_WIDTH, LEI2_IMG_HEIGHT, (const uint16_t*)LEI2_IMG);
+  #else
+    M5.Display.fillRect(mine_icon_x,mine_icon_y,27,27,TFT_BLACK);
+  #endif
+
+  // score number (right aligned 15px from right)
+  {
+    String s = String(scorePoints);
+    int tsize = 3;
+    M5.Display.setTextSize(tsize);
+    M5.Display.setTextColor(TFT_BLACK);
+    int charW = 12;
+    int textW = charW * s.length();
+    int drawRight = btn1_x + BUTTON_W - 15;
+    int drawX = drawRight - textW;
+    int iconCenterY = icon_y + 27/2;
+    int drawY = iconCenterY - 8;
+    if (drawX < btn1_x + 6) drawX = btn1_x + 6;
+    M5.Display.drawString(s, drawX, drawY);
+    M5.Display.setTextSize(1);
+  }
+
+  // mines left number (right aligned 15px)
+  {
+    String s = String(flagsLeft);
+    int tsize = 3;
+    M5.Display.setTextSize(tsize);
+    M5.Display.setTextColor(TFT_BLACK);
+    int charW = 12;
+    int textW = charW * s.length();
+    int drawRight = btn2_x + BUTTON_W - 15;
+    int drawX = drawRight - textW;
+    int iconCenterY = mine_icon_y + 27/2;
+    int drawY = iconCenterY - 8;
+    if (drawX < btn2_x + 6) drawX = btn2_x + 6;
+    M5.Display.drawString(s, drawX, drawY);
+    M5.Display.setTextSize(1);
+  }
+}
+
+// reveal all mines and show shu image
+void revealAllMines() {
+  for (int r=0;r<ROWS;++r) for (int c=0;c<COLS;++c) if (minesArr[r][c]) { stateArr[r][c]=1; drawCell(r,c); }
+  if (HAS_SHU) {
+    #if defined(SHU_IMG_WIDTH) && defined(SHU_IMG_HEIGHT)
+      M5.Display.pushImage((SCREEN_W - SHU_IMG_WIDTH)/2, (SCREEN_H - SHU_IMG_HEIGHT)/2, SHU_IMG_WIDTH, SHU_IMG_HEIGHT, (const uint16_t*)SHU_IMG);
+    #endif
+  } else {
+    M5.Display.setTextSize(3);
+    M5.Display.setTextColor(TFT_RED);
+    M5.Display.drawString("GAME OVER", (SCREEN_W/2)-120, SCREEN_H/2 - 10);
+    M5.Display.setTextSize(1);
+  }
+  M5.Display.display();
+}
+
+// flood reveal (calls display on each change for local refresh)
+void revealFlood(int r,int c) {
+  if (r<0||c<0||r>=ROWS||c>=COLS) return;
+  if (stateArr[r][c] != 0) return;
+  stateArr[r][c] = 1;
+  scorePoints += 1;
+  drawCell(r,c);
+  M5.Display.display();
+  if (numsArr[r][c] == 0) {
+    for (int dr=-1; dr<=1; ++dr) for (int dc=-1; dc<=1; ++dc) {
+      int nr=r+dr, nc=c+dc;
+      if (nr==r && nc==c) continue;
+      if (nr>=0 && nr<ROWS && nc>=0 && nc<COLS) revealFlood(nr,nc);
+    }
+  }
+}
+
+// check win
+bool checkWin() {
+  for (int r=0;r<ROWS;++r) for (int c=0;c<COLS;++c) if (!minesArr[r][c] && stateArr[r][c] != 1) return false;
+  return true;
+}
+
+// reset board (full redraw)
+void resetBoard() {
+  int totalCells = ROWS*COLS;
+  totalMines = max(10, int(totalCells * 0.16));
+  flagsLeft = totalMines;
+  scorePoints = 0;
+  gameOver = false;
+  for (int r=0;r<ROWS;++r) for (int c=0;c<COLS;++c) { minesArr[r][c]=0; numsArr[r][c]=0; stateArr[r][c]=0; }
+  static int cells[ROWS*COLS];
+  int idx=0;
+  for (int r=0;r<ROWS;++r) for (int c=0;c<COLS;++c) cells[idx++]=r*COLS + c;
+  for (int i=idx-1;i>0;--i) { int j=random(0,i+1); int t=cells[i]; cells[i]=cells[j]; cells[j]=t; }
+  for (int i=0;i<totalMines && i<idx;++i) { int v=cells[i]; int rr=v/COLS, cc=v%COLS; minesArr[rr][cc]=1; }
+  for (int r=0;r<ROWS;++r) for (int c=0;c<COLS;++c) {
+    if (minesArr[r][c]) { numsArr[r][c] = 255; continue; }
+    int cnt=0;
+    for (int dr=-1;dr<=1;++dr) for (int dc=-1;dc<=1;++dc) {
+      int nr=r+dr, nc=c+dc;
+      if (nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&minesArr[nr][nc]) cnt++;
+    }
+    numsArr[r][c]=cnt;
+  }
+
+  // draw background + grid + ui (commit full screen once)
+  drawBackground();
+  GRID_W = COLS*CELL + (COLS-1)*GAP;
+  GRID_H = ROWS*CELL + (ROWS-1)*GAP;
+  drawGridFull();
+  drawButtonsAndUI();
+  M5.Display.display();
+}
+
+// handle short tap
+void handleShortTap(int sx,int sy) {
+  if (showingGuanji) return; // ignore while guanji shown
+  // check within grid
+  if (sx >= GRID_X && sx < GRID_X + GRID_W && sy >= GRID_Y && sy < GRID_Y + GRID_H) {
+    int relx = sx - GRID_X, rely = sy - GRID_Y;
+    int stride = CELL + GAP;
+    int cc = relx / stride;
+    int rr = rely / stride;
+    int within_x = relx % stride, within_y = rely % stride;
+    if (within_x >= CELL || within_y >= CELL) return; // gap
+    int r = rr, c = cc;
+    if (gameOver) return;
+    if (stateArr[r][c] != 0) return;
+    if (minesArr[r][c]) {
+      revealAllMines();
+      gameOver = true;
+      return;
+    } else {
+      revealFlood(r,c);
+      if (checkWin()) {
+        scorePoints += 50;
+        gameOver = true;
+        if (HAS_YING) {
+          #if defined(YING_IMG_WIDTH) && defined(YING_IMG_HEIGHT)
+            M5.Display.pushImage((SCREEN_W - YING_IMG_WIDTH)/2, (SCREEN_H - YING_IMG_HEIGHT)/2, YING_IMG_WIDTH, YING_IMG_HEIGHT, (const uint16_t*)YING_IMG);
+          #endif
+          M5.Display.display();
+        } else {
+          M5.Display.setTextSize(3);
+          M5.Display.setTextColor(0x07E0);
+          M5.Display.drawString("YOU WIN!", (SCREEN_W/2)-120, SCREEN_H/2 - 10);
+          M5.Display.setTextSize(1);
+          M5.Display.display();
+        }
+      }
+      drawButtonsAndUI();
+      M5.Display.display();
+      return;
+    }
+  }
+  // restart button
+  int bx = btn_restart_x, by = BUTTON_ROW_Y;
+  if (sx >= bx && sx <= bx + BUTTON_W && sy >= by && sy <= by + BUTTON_H) { resetBoard(); return; }
+}
+
+// handle long press (flag)
+void handleLongPress(int sx,int sy) {
+  if (showingGuanji) return; // ignore while guanji shown
+  if (sx >= GRID_X && sx < GRID_X + GRID_W && sy >= GRID_Y && sy < GRID_Y + GRID_H) {
+    int relx = sx - GRID_X, rely = sy - GRID_Y;
+    int stride = CELL + GAP;
+    int cc = relx / stride;
+    int rr = rely / stride;
+    int within_x = relx % stride, within_y = rely % stride;
+    if (within_x >= CELL || within_y >= CELL) return; // gap
+    int r = rr, c = cc;
+    if (gameOver) return;
+    if (stateArr[r][c] == 0 && flagsLeft > 0) {
+      stateArr[r][c] = 2;
+      flagsLeft--;
+      if (minesArr[r][c]) scorePoints += 10;
+    } else if (stateArr[r][c] == 2) {
+      if (minesArr[r][c]) scorePoints -= 10;
+      stateArr[r][c] = 0;
+      flagsLeft++;
+    }
+    drawCell(r,c);
+    drawButtonsAndUI();
+    M5.Display.display();
+    return;
+  }
+  int bx = btn_restart_x, by = BUTTON_ROW_Y;
+  if (sx >= bx && sx <= bx + BUTTON_W && sy >= by && sy <= by + BUTTON_H) { resetBoard(); return; }
+}
+
+// toggle guanji wallpaper via side button (BtnB)
+void toggleGuanji() {
+  showingGuanji = !showingGuanji;
+  if (showingGuanji) {
+    // show guanji wallpaper
+    #if defined(GUANJI_IMG_WIDTH) && defined(GUANJI_IMG_HEIGHT)
+      M5.Display.pushImage(0,0,GUANJI_IMG_WIDTH,GUANJI_IMG_HEIGHT,(const uint16_t*)GUANJI_IMG);
+    #else
+      // fallback to bg if available
+      pushBgIfPresent();
+    #endif
+    M5.Display.display();
+  } else {
+    // restore current screen (redraw same game state)
+    drawBackground();
+    drawGridFull();
+    drawButtonsAndUI();
+    M5.Display.display();
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(10);
-
   auto cfg = M5.config();
   M5.begin(cfg);
-
-  // rotation and sizes
   M5.Display.setRotation(0);
   SCREEN_W = M5.Display.width();
   SCREEN_H = M5.Display.height();
-  Serial.printf("Display W=%d H=%d\n", SCREEN_W, SCREEN_H);
-
-  colsActive = MAX_COLS;
-  GRID_X = (SCREEN_W - colsActive * CELL) / 2;
-  GRID_W = colsActive * CELL;
-
-  // ensure title fits — if too wide, we center with tx=0 fallback
-  int title_w = TITLE_IMG_WIDTH;
-  if (title_w > SCREEN_W) title_w = SCREEN_W;
-
-  GRID_Y = TITLE_IMG_HEIGHT + 6; // put grid under title (6px margin)
-
-  // rows under title, leave bottom UI ~60px
-  rowsActive = (SCREEN_H - GRID_Y - 60) / CELL;
-  if (rowsActive > MAX_ROWS) rowsActive = MAX_ROWS;
-  if (rowsActive < 3) rowsActive = 3;
-  GRID_H = rowsActive * CELL;
-
-  minesCount = max(10, int(colsActive * rowsActive * 0.16));
-  flagsLeft = minesCount;
-
-  // UI rects
-  int ui_h = 42;
-  minesBoxRect.x = 10;
-  minesBoxRect.y = SCREEN_H - ui_h - 8;
-  minesBoxRect.w = 140;
-  minesBoxRect.h = ui_h;
-
-  restartBtnRect.w = 140;
-  restartBtnRect.h = ui_h;
-  restartBtnRect.x = SCREEN_W - restartBtnRect.w - 10;
-  restartBtnRect.y = SCREEN_H - ui_h - 8;
-
-  // Clear once, draw title immediately (fast)
-  M5.Display.clear(TFT_WHITE);
-
-  // Draw title once immediately with block transfer
-  drawTitleOnce();
-
-  // init game
+  GRID_W = COLS*CELL + (COLS-1)*GAP;
+  GRID_H = ROWS*CELL + (ROWS-1)*GAP;
   randomSeed(esp_random() ^ millis());
+  drawBackground();
   resetBoard();
-
-  // draw UI (bottom boxes etc) and draw grid content (cells)
-  drawUI();
-  drawGridFull();
-
-  Serial.printf("Grid X=%d Y=%d W=%d H=%d rows=%d cols=%d mines=%d\n",
-                GRID_X, GRID_Y, GRID_W, GRID_H, rowsActive, colsActive, minesCount);
 }
 
 void loop() {
   M5.update();
 
+  // handle guanji button (physical side key)
+  if (M5.BtnB.wasPressed()) {
+    toggleGuanji();
+    // short debounce
+    delay(150);
+    return;
+  }
+
+  // if showing guanji, ignore touch & other inputs (only BtnB restores)
+  if (showingGuanji) {
+    // still update M5 so BtnB events are processed
+    delay(10);
+    return;
+  }
+
   int cnt = M5.Touch.getCount();
   if (cnt > 0) {
-    const auto &d = M5.Touch.getDetail(0);
-    lastRawX = d.x;
-    lastRawY = d.y;
-
+    auto d = M5.Touch.getDetail(0);
+    lastTouchX = d.x; lastTouchY = d.y;
     if (!touching) {
       touching = true;
       touchStartMs = millis();
       longHandled = false;
     } else {
-      unsigned long held = millis() - touchStartMs;
-      if (!longHandled && held >= LONGPRESS_MS) {
-        // long press handling: place/remove flag OR long-press restart
-        int r, c;
-        if (pixelToCell(lastRawX, lastRawY, r, c)) {
-          if (!gameOver) {
-            if (stateArr[r][c] == 0 && flagsLeft > 0) {
-              stateArr[r][c] = 2; flagsLeft--;
-            } else if (stateArr[r][c] == 2) {
-              stateArr[r][c] = 0; flagsLeft++;
-            }
-            drawCell(r, c);
-            // only update UI parts that changed (flags count)
-            // redraw mines-left box value
-            M5.Display.fillRect(minesBoxRect.x + 8, minesBoxRect.y + 4, minesBoxRect.w - 16, minesBoxRect.h - 8, TFT_BLACK);
-            M5.Display.setTextSize(3);
-            M5.Display.setTextColor(TFT_WHITE);
-            M5.Display.drawString(String(flagsLeft), minesBoxRect.x + 12, minesBoxRect.y + 6);
-            M5.Display.setTextSize(1);
-          }
-        } else {
-          // maybe long press restart
-          if (lastRawX >= restartBtnRect.x && lastRawX <= restartBtnRect.x + restartBtnRect.w &&
-              lastRawY >= restartBtnRect.y && lastRawY <= restartBtnRect.y + restartBtnRect.h) {
-            // full redraw only on restart (user requested)
-            resetBoard();         // resetBoard will redraw grid/UI
-          }
-        }
+      unsigned long dur = millis() - touchStartMs;
+      if (!longHandled && dur >= LONGPRESS_MS) {
+        handleLongPress(lastTouchX, lastTouchY);
         longHandled = true;
       }
     }
   } else {
     if (touching) {
-      // touch released
       touching = false;
-      if (!longHandled) {
-        int r, c;
-        if (pixelToCell(lastRawX, lastRawY, r, c)) {
-          if (!gameOver && stateArr[r][c] == 0) {
-            if (minesArr[r][c]) {
-              revealAllMines();
-              gameOver = true;
-              // show GAME OVER (no full clear)
-              M5.Display.setTextSize(2);
-              M5.Display.setTextColor(TFT_RED);
-              M5.Display.drawString("GAME OVER", SCREEN_W/2 - 60, SCREEN_H/2 - 10);
-              M5.Display.setTextSize(1);
-            } else {
-              revealFlood(r, c);
-              if (checkWin()) {
-                M5.Display.setTextSize(2);
-                M5.Display.setTextColor(TFT_GREEN);
-                M5.Display.drawString("YOU WIN!", SCREEN_W/2 - 60, SCREEN_H/2 - 10);
-                M5.Display.setTextSize(1);
-                gameOver = true;
-              }
-            }
-          }
-        } else {
-          // tap outside grid -> may be restart button
-          if (lastRawX >= restartBtnRect.x && lastRawX <= restartBtnRect.x + restartBtnRect.w &&
-              lastRawY >= restartBtnRect.y && lastRawY <= restartBtnRect.y + restartBtnRect.h) {
-            resetBoard(); // full redraw only on restart
-          }
-        }
-      }
+      unsigned long dur = millis() - touchStartMs;
+      if (!longHandled) handleShortTap(lastTouchX, lastTouchY);
     }
   }
 
-  if (M5.BtnA.wasPressed()) {
-    resetBoard();
-  }
-
-  delay(8);
-}
-
-// ---------- image + UI drawing ----------
-// Use pushImage to draw TITLE_IMG in a single fast operation.
-// NOTE: pushImage signature varies by library; for M5Unified (LovyanGFX), this is commonly supported:
-//   M5.Display.pushImage(x, y, w, h, (const uint16_t*)buf);
-// If your build errors saying pushImage is not found, paste the compiler error here and I'll adapt.
-void drawTitleOnce() {
-  int tx = (SCREEN_W - TITLE_IMG_WIDTH) / 2;
-  if (tx < 0) tx = 0;
-  // fast block transfer
-  M5.Display.pushImage(tx, 0, TITLE_IMG_WIDTH, TITLE_IMG_HEIGHT, (const uint16_t*)TITLE_IMG);
-}
-
-// draw UI components (does not clear title)
-void drawUI() {
-  // bottom UI area
-  M5.Display.fillRect(0, SCREEN_H - 80, SCREEN_W, 80, TFT_WHITE);
-
-  // mines-left box (left-bottom) - black box with white number
-  M5.Display.fillRect(minesBoxRect.x, minesBoxRect.y, minesBoxRect.w, minesBoxRect.h, TFT_BLACK);
-  M5.Display.drawRect(minesBoxRect.x, minesBoxRect.y, minesBoxRect.w, minesBoxRect.h, TFT_WHITE);
-  M5.Display.setTextSize(3);
-  M5.Display.setTextColor(TFT_WHITE);
-  M5.Display.drawString(String(flagsLeft), minesBoxRect.x + 12, minesBoxRect.y + 6);
-  M5.Display.setTextSize(1);
-
-  // restart button (right-bottom)
-  M5.Display.fillRect(restartBtnRect.x, restartBtnRect.y, restartBtnRect.w, restartBtnRect.h, TFT_WHITE);
-  M5.Display.drawRect(restartBtnRect.x, restartBtnRect.y, restartBtnRect.w, restartBtnRect.h, TFT_BLACK);
-  M5.Display.setTextSize(2);
-  M5.Display.setTextColor(TFT_BLACK);
-  M5.Display.drawString("Restart", restartBtnRect.x + 18, restartBtnRect.y + 10);
-  M5.Display.setTextSize(1);
-
-  // grid border
-  M5.Display.drawRect(GRID_X - 2, GRID_Y - 2, GRID_W + 4, GRID_H + 4, TFT_BLACK);
-}
-
-// draw all cells (initial or full redraw)
-void drawGridFull() {
-  for (int r = 0; r < rowsActive; ++r) {
-    for (int c = 0; c < colsActive; ++c) {
-      drawCell(r, c);
-    }
-  }
-}
-
-void drawCell(int r, int c) {
-  if (r < 0 || r >= rowsActive || c < 0 || c >= colsActive) return;
-  int x = GRID_X + c * CELL;
-  int y = GRID_Y + r * CELL;
-
-  if (stateArr[r][c] == 0) {
-    // hidden
-    M5.Display.fillRect(x, y, CELL - 2, CELL - 2, 0xC0C0C0);
-    M5.Display.drawRect(x, y, CELL - 2, CELL - 2, TFT_BLACK);
-  } else if (stateArr[r][c] == 2) {
-    // flagged: white 'F' on gray
-    M5.Display.fillRect(x, y, CELL - 2, CELL - 2, 0xC0C0C0);
-    M5.Display.drawRect(x, y, CELL - 2, CELL - 2, TFT_BLACK);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_WHITE);
-    M5.Display.drawString("F", x + CELL / 3, y + CELL / 4);
-    M5.Display.setTextSize(1);
-  } else {
-    // revealed
-    M5.Display.fillRect(x, y, CELL - 2, CELL - 2, TFT_WHITE);
-    M5.Display.drawRect(x, y, CELL - 2, CELL - 2, TFT_BLACK);
-    if (minesArr[r][c]) {
-      M5.Display.setTextSize(2);
-      M5.Display.setTextColor(TFT_RED);
-      M5.Display.drawString("*", x + CELL / 3, y + CELL / 4);
-      M5.Display.setTextSize(1);
-    } else {
-      uint8_t n = numsArr[r][c];
-      if (n > 0) {
-        uint16_t col = TFT_BLUE;
-        if (n == 2) col = 0x008000;
-        if (n == 3) col = TFT_RED;
-        M5.Display.setTextSize(2);
-        M5.Display.setTextColor(col);
-        M5.Display.drawString(String(n), x + CELL / 3, y + CELL / 4);
-        M5.Display.setTextSize(1);
-      }
-    }
-  }
-}
-
-// reset board: full redraw only here (user requested)
-void resetBoard() {
-  // full clear and redraw title/UI/grid
-  M5.Display.clear(TFT_WHITE);
-  drawTitleOnce();
-
-  flagsLeft = minesCount;
-  gameOver = false;
-
-  // reset arrays
-  for (int r = 0; r < MAX_ROWS; ++r) {
-    for (int c = 0; c < MAX_COLS; ++c) {
-      minesArr[r][c] = 0;
-      numsArr[r][c] = 0;
-      stateArr[r][c] = 0;
-    }
-  }
-
-  // build cell list
-  int total = rowsActive * colsActive;
-  static int cells[MAX_ROWS * MAX_COLS][2];
-  int idx = 0;
-  for (int r = 0; r < rowsActive; ++r) {
-    for (int c = 0; c < colsActive; ++c) {
-      cells[idx][0] = r;
-      cells[idx][1] = c;
-      idx++;
-    }
-  }
-
-  // Fisher-Yates shuffle
-  for (int i = total - 1; i > 0; --i) {
-    int j = random(0, i + 1);
-    int tx = cells[i][0], ty = cells[i][1];
-    cells[i][0] = cells[j][0]; cells[i][1] = cells[j][1];
-    cells[j][0] = tx; cells[j][1] = ty;
-  }
-
-  // place mines
-  for (int i = 0; i < minesCount && i < total; ++i) {
-    int rr = cells[i][0], cc = cells[i][1];
-    minesArr[rr][cc] = 1;
-  }
-
-  // compute neighbor counts
-  for (int r = 0; r < rowsActive; ++r) {
-    for (int c = 0; c < colsActive; ++c) {
-      if (minesArr[r][c]) { numsArr[r][c] = 255; continue; }
-      int cnt = 0;
-      for (int dr = -1; dr <= 1; ++dr) {
-        for (int dc = -1; dc <= 1; ++dc) {
-          int nr = r + dr, nc = c + dc;
-          if (nr >= 0 && nr < rowsActive && nc >= 0 && nc < colsActive && minesArr[nr][nc]) cnt++;
-        }
-      }
-      numsArr[r][c] = cnt;
-    }
-  }
-
-  // full UI redraw
-  drawUI();
-  drawGridFull();
-}
-
-void revealFlood(int r, int c) {
-  if (r < 0 || c < 0 || r >= rowsActive || c >= colsActive) return;
-  if (stateArr[r][c] != 0) return;
-  stateArr[r][c] = 1;
-  drawCell(r, c);
-  if (numsArr[r][c] == 0) {
-    for (int dr = -1; dr <= 1; ++dr) for (int dc = -1; dc <= 1; ++dc)
-      if (!(dr == 0 && dc == 0)) revealFlood(r + dr, c + dc);
-  }
-}
-
-void revealAllMines() {
-  for (int r = 0; r < rowsActive; ++r) for (int c = 0; c < colsActive; ++c)
-    if (minesArr[r][c]) { stateArr[r][c] = 1; drawCell(r, c); }
-}
-
-bool checkWin() {
-  for (int r = 0; r < rowsActive; ++r) for (int c = 0; c < colsActive; ++c)
-    if (!minesArr[r][c] && stateArr[r][c] != 1) return false;
-  return true;
-}
-
-bool pixelToCell(int sx, int sy, int &outR, int &outC) {
-  if (sy < GRID_Y) return false;
-  if (sx < GRID_X || sx >= GRID_X + GRID_W) return false;
-  int cx = (sx - GRID_X) / CELL;
-  int cy = (sy - GRID_Y) / CELL;
-  if (cx < 0 || cx >= colsActive || cy < 0 || cy >= rowsActive) return false;
-  outR = cy; outC = cx;
-  return true;
+  if (M5.BtnA.wasPressed()) resetBoard();
+  delay(10);
 }
