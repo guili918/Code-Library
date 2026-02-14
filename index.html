@@ -1,0 +1,701 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>华容道 - Klotski</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .game-container {
+            background: #ffffff;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #000000;
+            margin-bottom: 8px;
+            font-size: 24px;
+            font-weight: 300;
+            letter-spacing: 4px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666666;
+            margin-bottom: 30px;
+            font-size: 12px;
+            font-weight: 300;
+        }
+
+        .level-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .level-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: 1px solid #000;
+            background: #FFF;
+            box-shadow: 0 3px 0 0 #000;
+            color: #000000;
+            font-size: 12px;
+            font-weight: 300;
+            cursor: pointer;
+            transition: all 0.1s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .level-btn:hover {
+            transform: translateY(1px);
+            box-shadow: 0 2px 0 0 #000;
+        }
+
+        .level-btn:active {
+            transform: translateY(3px);
+            box-shadow: 0 0 0 0 #000;
+        }
+
+        .level-btn.active {
+            background: #000000;
+            color: #ffffff;
+            box-shadow: 0 3px 0 0 #333;
+        }
+
+        .level-btn.completed {
+            position: relative;
+        }
+
+        .level-btn.completed::after {
+            content: '';
+            position: absolute;
+            bottom: 4px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 4px;
+            background: #000000;
+            border-radius: 50%;
+        }
+
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 0 5px;
+            font-size: 14px;
+            color: #666666;
+            font-weight: 300;
+        }
+
+        .moves {
+            color: #000000;
+        }
+
+        .board {
+            width: 100%;
+            aspect-ratio: 4/5;
+            background: #f8f8f8;
+            border-radius: 16px;
+            border: 2px solid #000;
+            position: relative;
+            touch-action: none;
+            padding: 4px;
+        }
+
+        .exit-zone {
+            position: absolute;
+            bottom: 2px;
+            left: calc(25% + 4px);
+            width: calc(50% - 8px);
+            height: 4px;
+            background: #000000;
+            border-radius: 2px;
+            z-index: 0;
+        }
+
+        .block {
+            position: absolute;
+            border-radius: 12px;
+            border: 1px solid #000;
+            background: #FFF;
+            box-shadow: 0 4px 0 0 #000;
+            cursor: grab;
+            transition: left 0.2s ease-out, top 0.2s ease-out;
+            touch-action: none;
+            z-index: 1;
+        }
+
+        .block.dragging {
+            transition: none;
+            z-index: 100;
+            box-shadow: 0 2px 0 0 #000;
+            transform: translateY(2px);
+        }
+
+        .block.target {
+            background: #FFF;
+            border: 2px solid #000;
+            box-shadow: 0 4px 0 0 #000;
+        }
+
+        .block-2x2 {
+            width: calc(50% - 4px);
+            height: calc(40% - 4px);
+        }
+
+        .block-2x1 {
+            width: calc(50% - 4px);
+            height: calc(20% - 4px);
+        }
+
+        .block-1x2 {
+            width: calc(25% - 4px);
+            height: calc(40% - 4px);
+        }
+
+        .block-1x1 {
+            width: calc(25% - 4px);
+            height: calc(20% - 4px);
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-top: 25px;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 12px 28px;
+            border-radius: 12px;
+            border: 1px solid #000;
+            background: #FFF;
+            box-shadow: 0 4px 0 0 #000;
+            color: #000000;
+            font-size: 13px;
+            font-weight: 300;
+            cursor: pointer;
+            transition: all 0.1s;
+            letter-spacing: 1px;
+        }
+
+        .btn:hover {
+            transform: translateY(1px);
+            box-shadow: 0 3px 0 0 #000;
+        }
+
+        .btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 0 0 #000;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .modal h2 {
+            color: #000000;
+            margin-bottom: 20px;
+            font-size: 20px;
+            font-weight: 300;
+            letter-spacing: 2px;
+        }
+
+        .modal p {
+            color: #666666;
+            margin-bottom: 30px;
+            font-size: 14px;
+            font-weight: 300;
+        }
+
+        .modal .btn {
+            margin-top: 10px;
+        }
+
+        @media (max-width: 480px) {
+            .game-container {
+                padding: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>华容道</h1>
+        <p class="subtitle">将白色大方块移至底部出口</p>
+        
+        <div class="level-selector" id="levelSelector"></div>
+
+        <div class="game-info">
+            <div>LEVEL <span id="currentLevel">1</span>/10</div>
+            <div class="moves">MOVES: <span id="moveCount">0</span></div>
+        </div>
+
+        <div class="board" id="board">
+            <div class="exit-zone"></div>
+        </div>
+
+        <div class="controls">
+            <button class="btn" onclick="game.reset()">重置</button>
+            <button class="btn" onclick="game.hint()">提示</button>
+        </div>
+    </div>
+
+    <div class="modal" id="winModal">
+        <div class="modal-content">
+            <h2>关卡完成</h2>
+            <p id="winMessage">用了 0 步</p>
+            <button class="btn" onclick="game.nextLevel()">下一关</button>
+        </div>
+    </div>
+
+    <script>
+        const levels = [
+            {
+                name: "入门",
+                blocks: [
+                    {type: '2x2', x: 1, y: 0, target: true},
+                    {type: '1x1', x: 0, y: 2},
+                    {type: '1x1', x: 3, y: 2},
+                    {type: '1x1', x: 0, y: 3},
+                    {type: '1x1', x: 3, y: 3},
+                    {type: '1x1', x: 1, y: 4},
+                    {type: '1x1', x: 2, y: 4}
+                ]
+            },
+            {
+                name: "障碍",
+                blocks: [
+                    {type: '2x2', x: 1, y: 0, target: true},
+                    {type: '1x1', x: 0, y: 0},
+                    {type: '1x1', x: 3, y: 0},
+                    {type: '1x1', x: 0, y: 1},
+                    {type: '1x1', x: 3, y: 1},
+                    {type: '1x1', x: 1, y: 2},
+                    {type: '1x1', x: 2, y: 2},
+                    {type: '1x1', x: 0, y: 3},
+                    {type: '1x1', x: 3, y: 3}
+                ]
+            },
+            {
+                name: "竖条",
+                blocks: [
+                    {type: '2x2', x: 1, y: 0, target: true},
+                    {type: '1x2', x: 0, y: 0},
+                    {type: '1x2', x: 3, y: 0},
+                    {type: '1x1', x: 1, y: 2},
+                    {type: '1x1', x: 2, y: 2},
+                    {type: '1x1', x: 0, y: 3},
+                    {type: '1x1', x: 3, y: 3}
+                ]
+            },
+            {
+                name: "横条",
+                blocks: [
+                    {type: '2x2', x: 1, y: 0, target: true},
+                    {type: '2x1', x: 0, y: 2},
+                    {type: '2x1', x: 2, y: 2},
+                    {type: '1x1', x: 0, y: 0},
+                    {type: '1x1', x: 3, y: 0},
+                    {type: '1x1', x: 0, y: 4},
+                    {type: '1x1', x: 3, y: 4}
+                ]
+            },
+            {
+                name: "混合I",
+                blocks: [
+                    {type: '2x2', x: 1, y: 0, target: true},
+                    {type: '1x2', x: 0, y: 0},
+                    {type: '1x2', x: 3, y: 0},
+                    {type: '2x1', x: 0, y: 3},
+                    {type: '2x1', x: 2, y: 3},
+                    {type: '1x1', x: 1, y: 2},
+                    {type: '1x1', x: 2, y: 2}
+                ]
+            },
+            {
+                name: "迷宫",
+                blocks: [
+                    {type: '2x2', x: 1, y: 1, target: true},
+                    {type: '1x2', x: 0, y: 0},
+                    {type: '1x2', x: 3, y: 0},
+                    {type: '1x2', x: 0, y: 3},
+                    {type: '1x2', x: 3, y: 3},
+                    {type: '2x1', x: 1, y: 0},
+                    {type: '1x1', x: 1, y: 3},
+                    {type: '1x1', x: 2, y: 3}
+                ]
+            },
+            {
+                name: "挑战",
+                blocks: [
+                    {type: '2x2', x: 1, y: 0, target: true},
+                    {type: '1x2', x: 0, y: 0},
+                    {type: '1x2', x: 3, y: 0},
+                    {type: '1x2', x: 0, y: 2},
+                    {type: '1x2', x: 3, y: 2},
+                    {type: '2x1', x: 1, y: 2},
+                    {type: '1x1', x: 0, y: 4},
+                    {type: '1x1', x: 3, y: 4}
+                ]
+            },
+            {
+                name: "极限",
+                blocks: [
+                    {type: '2x2', x: 1, y: 2, target: true},
+                    {type: '1x2', x: 0, y: 0},
+                    {type: '1x2', x: 3, y: 0},
+                    {type: '1x2', x: 0, y: 2},
+                    {type: '1x2', x: 3, y: 2},
+                    {type: '2x1', x: 0, y: 4},
+                    {type: '2x1', x: 2, y: 4},
+                    {type: '1x1', x: 1, y: 0},
+                    {type: '1x1', x: 2, y: 0}
+                ]
+            },
+            {
+                name: "大师",
+                blocks: [
+                    {type: '2x2', x: 1, y: 0, target: true},
+                    {type: '2x1', x: 0, y: 2},
+                    {type: '2x1', x: 2, y: 2},
+                    {type: '1x2', x: 0, y: 0},
+                    {type: '1x2', x: 3, y: 0},
+                    {type: '1x2', x: 0, y: 3},
+                    {type: '1x2', x: 3, y: 3},
+                    {type: '1x1', x: 1, y: 3},
+                    {type: '1x1', x: 2, y: 3}
+                ]
+            },
+            {
+                name: "终极",
+                blocks: [
+                    {type: '2x2', x: 1, y: 2, target: true},
+                    {type: '2x1', x: 0, y: 0},
+                    {type: '2x1', x: 2, y: 0},
+                    {type: '2x1', x: 0, y: 1},
+                    {type: '2x1', x: 2, y: 1},
+                    {type: '1x2', x: 0, y: 2},
+                    {type: '1x2', x: 3, y: 2},
+                    {type: '1x1', x: 1, y: 4},
+                    {type: '1x1', x: 2, y: 4}
+                ]
+            }
+        ];
+
+        class KlotskiGame {
+            constructor() {
+                this.currentLevel = 0;
+                this.moves = 0;
+                this.blocks = [];
+                this.draggedBlock = null;
+                this.startX = 0;
+                this.startY = 0;
+                this.initialBlockX = 0;
+                this.initialBlockY = 0;
+                this.hasMoved = false;
+                this.completedLevels = JSON.parse(localStorage.getItem('klotski_completed') || '[]');
+                
+                this.board = document.getElementById('board');
+                this.moveCountEl = document.getElementById('moveCount');
+                this.currentLevelEl = document.getElementById('currentLevel');
+                this.modal = document.getElementById('winModal');
+                
+                this.init();
+            }
+
+            init() {
+                this.createLevelSelector();
+                this.loadLevel(0);
+                this.setupEventListeners();
+            }
+
+            createLevelSelector() {
+                const selector = document.getElementById('levelSelector');
+                selector.innerHTML = '';
+                
+                levels.forEach((level, index) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'level-btn';
+                    btn.textContent = index + 1;
+                    
+                    if (this.completedLevels.includes(index)) {
+                        btn.classList.add('completed');
+                    }
+                    if (index === this.currentLevel) {
+                        btn.classList.add('active');
+                    }
+                    
+                    btn.onclick = () => this.loadLevel(index);
+                    selector.appendChild(btn);
+                });
+            }
+
+            loadLevel(index) {
+                this.currentLevel = index;
+                this.moves = 0;
+                this.updateMoveDisplay();
+                this.currentLevelEl.textContent = index + 1;
+                
+                document.querySelectorAll('.level-btn').forEach((btn, i) => {
+                    btn.classList.toggle('active', i === index);
+                });
+                
+                this.renderBoard();
+            }
+
+            renderBoard() {
+                this.board.innerHTML = '<div class="exit-zone"></div>';
+                this.blocks = [];
+                
+                const level = levels[this.currentLevel];
+                
+                level.blocks.forEach((config, i) => {
+                    const block = document.createElement('div');
+                    block.className = `block block-${config.type} ${config.target ? 'target' : ''}`;
+                    
+                    // 使用百分比定位，确保在棋盘内
+                    const gap = 2; // 2% 的间隙
+                    const x = config.x * 25 + gap/2;
+                    const y = config.y * 20 + gap/2;
+                    
+                    block.style.left = `${x}%`;
+                    block.style.top = `${y}%`;
+                    
+                    block.dataset.index = i;
+                    block.dataset.type = config.type;
+                    block.dataset.x = config.x;
+                    block.dataset.y = config.y;
+                    
+                    this.board.appendChild(block);
+                    this.blocks.push({
+                        element: block,
+                        type: config.type,
+                        x: config.x,
+                        y: config.y,
+                        target: config.target || false,
+                        width: config.type === '2x2' || config.type === '2x1' ? 2 : 1,
+                        height: config.type === '2x2' || config.type === '1x2' ? 2 : 1
+                    });
+                });
+            }
+
+            setupEventListeners() {
+                this.board.addEventListener('mousedown', this.handleStart.bind(this));
+                document.addEventListener('mousemove', this.handleMove.bind(this));
+                document.addEventListener('mouseup', this.handleEnd.bind(this));
+                
+                this.board.addEventListener('touchstart', this.handleStart.bind(this), {passive: false});
+                document.addEventListener('touchmove', this.handleMove.bind(this), {passive: false});
+                document.addEventListener('touchend', this.handleEnd.bind(this));
+                
+                window.addEventListener('resize', () => {
+                    this.renderBoard();
+                });
+            }
+
+            getEventPos(e) {
+                if (e.touches && e.touches.length > 0) {
+                    return {x: e.touches[0].clientX, y: e.touches[0].clientY};
+                }
+                return {x: e.clientX, y: e.clientY};
+            }
+
+            handleStart(e) {
+                if (e.target.classList.contains('block')) {
+                    e.preventDefault();
+                    const index = parseInt(e.target.dataset.index);
+                    this.draggedBlock = this.blocks[index];
+                    
+                    const pos = this.getEventPos(e);
+                    this.startX = pos.x;
+                    this.startY = pos.y;
+                    this.initialBlockX = this.draggedBlock.x;
+                    this.initialBlockY = this.draggedBlock.y;
+                    this.hasMoved = false;
+                    
+                    this.draggedBlock.element.classList.add('dragging');
+                }
+            }
+
+            handleMove(e) {
+                if (!this.draggedBlock) return;
+                e.preventDefault();
+                
+                const pos = this.getEventPos(e);
+                const boardRect = this.board.getBoundingClientRect();
+                
+                // 计算相对于棋盘的坐标
+                const relX = pos.x - boardRect.left;
+                const relY = pos.y - boardRect.top;
+                
+                // 计算网格大小（包含间隙）
+                const cellWidth = boardRect.width / 4;
+                const cellHeight = boardRect.height / 5;
+                
+                // 计算当前在哪个格子
+                const gridX = Math.floor(relX / cellWidth);
+                const gridY = Math.floor(relY / cellHeight);
+                
+                // 检查是否移动到相邻格子（只能上下左右移动一格）
+                const dx = gridX - this.initialBlockX;
+                const dy = gridY - this.initialBlockY;
+                
+                // 只允许上下左右移动一格
+                const isValidMove = (Math.abs(dx) === 1 && dy === 0) || (dx === 0 && Math.abs(dy) === 1);
+                
+                if (isValidMove && !this.hasMoved) {
+                    const newX = this.initialBlockX + dx;
+                    const newY = this.initialBlockY + dy;
+                    
+                    // 检查边界和碰撞
+                    if (this.canMoveTo(this.draggedBlock, newX, newY)) {
+                        this.draggedBlock.x = newX;
+                        this.draggedBlock.y = newY;
+                        
+                        // 更新位置
+                        const gap = 2;
+                        const x = newX * 25 + gap/2;
+                        const y = newY * 20 + gap/2;
+                        
+                        this.draggedBlock.element.style.left = `${x}%`;
+                        this.draggedBlock.element.style.top = `${y}%`;
+                        this.draggedBlock.element.dataset.x = newX;
+                        this.draggedBlock.element.dataset.y = newY;
+                        
+                        this.hasMoved = true;
+                        this.moves++;
+                        this.updateMoveDisplay();
+                    }
+                }
+            }
+
+            handleEnd(e) {
+                if (!this.draggedBlock) return;
+                
+                this.draggedBlock.element.classList.remove('dragging');
+                
+                if (this.hasMoved) {
+                    this.checkWin();
+                }
+                
+                this.draggedBlock = null;
+            }
+
+            canMoveTo(block, newX, newY) {
+                // 严格检查边界
+                if (newX < 0 || newY < 0 || 
+                    newX + block.width > 4 || 
+                    newY + block.height > 5) {
+                    return false;
+                }
+                
+                // 检查与其他方块的碰撞
+                for (let other of this.blocks) {
+                    if (other === block) continue;
+                    
+                    if (this.isOverlapping(
+                        newX, newY, block.width, block.height,
+                        other.x, other.y, other.width, other.height
+                    )) {
+                        return false;
+                    }
+                }
+                
+                return true;
+            }
+
+            isOverlapping(x1, y1, w1, h1, x2, y2, w2, h2) {
+                return !(x1 + w1 <= x2 || x2 + w2 <= x1 || 
+                        y1 + h1 <= y2 || y2 + h2 <= y1);
+            }
+
+            checkWin() {
+                const target = this.blocks.find(b => b.target);
+                if (target && target.y === 3 && target.x === 1) {
+                    setTimeout(() => this.showWinModal(), 300);
+                }
+            }
+
+            showWinModal() {
+                if (!this.completedLevels.includes(this.currentLevel)) {
+                    this.completedLevels.push(this.currentLevel);
+                    localStorage.setItem('klotski_completed', JSON.stringify(this.completedLevels));
+                }
+                
+                this.createLevelSelector();
+                
+                document.getElementById('winMessage').textContent = `用了 ${this.moves} 步`;
+                this.modal.classList.add('show');
+            }
+
+            nextLevel() {
+                this.modal.classList.remove('show');
+                if (this.currentLevel < levels.length - 1) {
+                    this.loadLevel(this.currentLevel + 1);
+                } else {
+                    alert('已通关所有关卡');
+                    this.loadLevel(0);
+                }
+            }
+
+            reset() {
+                this.loadLevel(this.currentLevel);
+            }
+
+            hint() {
+                alert('先移动小方块为白色大方块腾出空间。');
+            }
+
+            updateMoveDisplay() {
+                this.moveCountEl.textContent = this.moves;
+            }
+        }
+
+        const game = new KlotskiGame();
+    </script>
+</body>
+</html>
